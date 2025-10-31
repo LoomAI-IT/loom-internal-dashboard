@@ -30,7 +30,6 @@ alert_manager = AlertManager(
     cfg.monitoring_redis_password,
 )
 
-
 tel = Telemetry(
     cfg.log_level,
     cfg.root_path,

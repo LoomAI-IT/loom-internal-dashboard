@@ -21,9 +21,11 @@ class DashboardController(interface.IDashboardController):
     async def get_user_movement_map(
             self,
             account_id: int,
+            hours: int = 24,
     ) -> JSONResponse:
         user_movement_map = await self.dashboard_service.get_user_movement_map(
             account_id=account_id,
+            hours=hours,
         )
 
         return JSONResponse(

@@ -440,7 +440,7 @@ wait_for_health() {
     log INFO "Ожидание инициализации (15 сек)"
     sleep 15
 
-    local max_attempts=2
+    local max_attempts=3
     local attempt=1
 
     {

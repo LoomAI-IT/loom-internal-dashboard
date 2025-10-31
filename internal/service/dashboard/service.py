@@ -30,7 +30,7 @@ class DashboardService(interface.IDashboardService):
             filters={
                 "service_name": "loom-tg-bot",
             },
-            limit=1000000,
+            limit=10000,
             content_filters={
                 "account_id": account_id,
             },

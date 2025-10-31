@@ -31,6 +31,7 @@ class DashboardService(interface.IDashboardService):
             },
             search_text=["Service"],
         )
+        self.logger.info('loki', {"logs": logs})
 
         spans_map = {}
         for log in logs:

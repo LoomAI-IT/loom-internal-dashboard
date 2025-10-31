@@ -29,7 +29,7 @@ class DashboardService(interface.IDashboardService):
                 "service_name": "loom-tg-bot",
                 "account_id": str(account_id),
             },
-            search_text=["Начало", "Завершение", "Service"],
+            search_text=["Service"],
         )
 
         spans_map = {}

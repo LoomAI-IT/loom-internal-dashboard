@@ -66,7 +66,6 @@ class ILokiClient(Protocol):
             content_filters: dict = None,
             search_text: str | list[str] = None,
             search_mode: str = "and",
-            limit: int = 100,
             start_time: datetime = None,
             end_time: datetime = None,
             direction: str = "backward",

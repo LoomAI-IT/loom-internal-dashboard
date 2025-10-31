@@ -29,7 +29,6 @@ class LokiClient(interface.ILokiClient):
             content_filters: dict = None,
             search_text: str | list[str] = None,
             search_mode: str = "and",
-            limit: int = 100,
             start_time: datetime = None,
             end_time: datetime = None,
             direction: str = "backward",
@@ -43,7 +42,6 @@ class LokiClient(interface.ILokiClient):
             content_filters: Словарь для поиска в содержимом логов (например, {"account_id": "1"})
             search_text: Текст для поиска в логах (строка или список строк)
             search_mode: Режим поиска - "and" (все строки должны присутствовать) или "or" (хотя бы одна)
-            limit: Максимальное количество логов (по умолчанию 100)
             start_time: Начало временного диапазона (по умолчанию - 1 час назад)
             end_time: Конец временного диапазона (по умолчанию - сейчас)
             direction: Направление сортировки ("backward" или "forward")
@@ -66,7 +64,6 @@ class LokiClient(interface.ILokiClient):
 
         params = {
             "query": query,
-            "limit": limit,
             "start": int(start_time.timestamp() * 1e9),
             "end": int(end_time.timestamp() * 1e9),
             "direction": direction

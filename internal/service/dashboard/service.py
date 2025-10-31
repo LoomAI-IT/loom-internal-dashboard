@@ -27,6 +27,8 @@ class DashboardService(interface.IDashboardService):
         logs = await self.loki.query_logs(
             filters={
                 "service_name": "loom-tg-bot",
+            },
+            content_filters={
                 "account_id": account_id,
             },
             search_text=["Service"],

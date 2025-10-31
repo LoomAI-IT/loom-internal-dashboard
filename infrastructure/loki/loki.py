@@ -26,6 +26,7 @@ class LokiClient(interface.ILokiClient):
     async def query_logs(
             self,
             filters: dict = None,
+            content_filters: dict = None,
             search_text: str | list[str] = None,
             search_mode: str = "and",
             limit: int = 100,
@@ -38,7 +39,8 @@ class LokiClient(interface.ILokiClient):
         Получение логов с фильтрацией
 
         Args:
-            filters: Словарь с полями для фильтрации (например, {"service_name": "my-service"})
+            filters: Словарь с label selectors (например, {"service_name": "my-service"})
+            content_filters: Словарь для поиска в содержимом логов (например, {"account_id": "1"})
             search_text: Текст для поиска в логах (строка или список строк)
             search_mode: Режим поиска - "and" (все строки должны присутствовать) или "or" (хотя бы одна)
             limit: Максимальное количество логов (по умолчанию 100)
@@ -52,13 +54,15 @@ class LokiClient(interface.ILokiClient):
         """
         if filters is None:
             filters = {}
+        if content_filters is None:
+            content_filters = {}
 
         if end_time is None:
             end_time = datetime.now()
         if start_time is None:
             start_time = end_time - timedelta(hours=1)
 
-        query = self._build_logql_query(filters, search_text, search_mode)
+        query = self._build_logql_query(filters, content_filters, search_text, search_mode)
 
         params = {
             "query": query,
@@ -146,15 +150,22 @@ class LokiClient(interface.ILokiClient):
     def _build_logql_query(
             self,
             filters: Dict[str, str],
+            content_filters: Dict[str, str],
             search_text: Optional[str | List[str]] = None,
             search_mode: str = "and"
     ) -> str:
 
         if not filters:
-            query = "{}"
+            query = '{service_name=~".+"}'
         else:
-            label_selectors = [f'{key}="{value}"' for key, value in filters.items()]
+            label_selectors = []
+            for key, value in filters.items():
+                label_selectors.append(f'{key}="{value}"')
             query = "{" + ", ".join(label_selectors) + "}"
+
+        if content_filters:
+            for key, value in content_filters.items():
+                query += f' | {key}=`{value}`'
 
         if search_text:
             if isinstance(search_text, str):
@@ -179,6 +190,7 @@ async def main() -> None:
     )
     logs = await loki.query_logs(
         filters={"service_name": "loom-tg-bot"},
+        content_filters={"account_id": 52},
         search_text=["Service"],
     )
     print(logs, flush=True)

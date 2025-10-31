@@ -63,6 +63,7 @@ class ILokiClient(Protocol):
     async def query_logs(
             self,
             filters: dict = None,
+            content_filters: dict = None,
             search_text: str | list[str] = None,
             search_mode: str = "and",
             limit: int = 100,

@@ -39,6 +39,7 @@ def include_dashboard_handlers(
         methods=["GET"],
         tags=["Dashboard"],
     )
+    app.add_api_route(prefix + "/health", heath_check_handler(), methods=["GET"])
 
 
 def heath_check_handler():

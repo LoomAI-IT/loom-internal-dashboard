@@ -1,44 +1,29 @@
 import requests
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from pkg.client.client import AsyncHTTPClient
+import re
+
 
 class LokiClient:
 
-    def __init__(self, url: str, timeout: int = 30):
-        self.url = url.rstrip('/')
-        self.timeout = timeout
-        self.query_range_endpoint = f"{self.url}/loki/api/v1/query_range"
-        self.query_endpoint = f"{self.url}/loki/api/v1/query"
-        self.labels_endpoint = f"{self.url}/loki/api/v1/labels"
+    def __init__(
+            self,
+            host: str,
+            port: int,
+    ):
+        self.client = AsyncHTTPClient(
+            host,
+            port,
+            prefix="/loki/api/v1",
+            use_tracing=True,
+        )
 
-    def _build_logql_query(self, filters: Dict[str, str], search_text: Optional[str] = None) -> str:
-        """
-        Построение LogQL запроса из словаря фильтров
-
-        Args:
-            filters: Словарь с метками и их значениями
-            search_text: Текст для поиска в логах (опционально)
-
-        Returns:
-            Строка LogQL запроса
-        """
-        if not filters:
-            query = "{}"
-        else:
-            # Формируем селектор меток
-            label_selectors = [f'{key}="{value}"' for key, value in filters.items()]
-            query = "{" + ", ".join(label_selectors) + "}"
-
-        # Добавляем фильтр по тексту, если указан
-        if search_text:
-            query += f' |= "{search_text}"'
-
-        return query
-
-    def query_logs(
+    async def query_logs(
             self,
             filters: Optional[Dict[str, str]] = None,
-            search_text: Optional[str] = None,
+            search_text: Optional[str | List[str]] = None,
+            search_mode: str = "and",  # "and" или "or"
             limit: int = 100,
             start_time: Optional[datetime] = None,
             end_time: Optional[datetime] = None,
@@ -49,7 +34,8 @@ class LokiClient:
 
         Args:
             filters: Словарь с полями для фильтрации (например, {"service_name": "my-service"})
-            search_text: Текст для поиска в логах
+            search_text: Текст для поиска в логах (строка или список строк)
+            search_mode: Режим поиска - "and" (все строки должны присутствовать) или "or" (хотя бы одна)
             limit: Максимальное количество логов (по умолчанию 100)
             start_time: Начало временного диапазона (по умолчанию - 1 час назад)
             end_time: Конец временного диапазона (по умолчанию - сейчас)
@@ -68,7 +54,7 @@ class LokiClient:
             start_time = end_time - timedelta(hours=1)
 
         # Формируем LogQL запрос
-        query = self._build_logql_query(filters, search_text)
+        query = self._build_logql_query(filters, search_text, search_mode)
 
         # Параметры запроса
         params = {
@@ -80,12 +66,10 @@ class LokiClient:
         }
 
         try:
-            response = requests.get(
-                self.query_range_endpoint,
+            response = await self.client.get(
+                "/query_range",
                 params=params,
-                timeout=self.timeout
             )
-            response.raise_for_status()
 
             data = response.json()
 
@@ -110,179 +94,51 @@ class LokiClient:
 
             return logs
 
-        except requests.exceptions.RequestException as e:
-            print(f"Ошибка при запросе к Loki: {e}")
-            return []
+        except Exception as e:
+            raise e
 
-    def query_instant(
+    def _build_logql_query(
             self,
-            filters: Optional[Dict[str, str]] = None,
-            search_text: Optional[str] = None,
-            limit: int = 100,
-            time: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
+            filters: Dict[str, str],
+            search_text: Optional[str | List[str]] = None,
+            search_mode: str = "and"
+    ) -> str:
         """
-        Мгновенный запрос логов (в определенный момент времени)
+        Формирует LogQL запрос
 
         Args:
-            filters: Словарь с полями для фильтрации
-            search_text: Текст для поиска в логах
-            limit: Максимальное количество логов
-            time: Момент времени для запроса (по умолчанию - сейчас)
+            filters: Фильтры по меткам
+            search_text: Текст для поиска (строка или список)
+            search_mode: Режим поиска ("and" или "or")
 
         Returns:
-            Список логов в виде словарей
+            Строка LogQL запроса
         """
-        if filters is None:
-            filters = {}
+        if not filters:
+            query = "{}"
+        else:
+            # Формируем селектор меток
+            label_selectors = [f'{key}="{value}"' for key, value in filters.items()]
+            query = "{" + ", ".join(label_selectors) + "}"
 
-        if time is None:
-            time = datetime.now()
+        # Добавляем фильтр по тексту
+        if search_text:
+            if isinstance(search_text, str):
+                # Один текст
+                query += f' |= "{search_text}"'
+            elif isinstance(search_text, list) and search_text:
+                # Несколько текстов
+                if search_mode.lower() == "and":
+                    # AND логика: все строки должны присутствовать
+                    for text in search_text:
+                        query += f' |= "{text}"'
+                elif search_mode.lower() == "or":
+                    # OR логика: хотя бы одна строка (через regex)
+                    # Экранируем специальные символы regex
+                    escaped_texts = [re.escape(text) for text in search_text]
+                    regex_pattern = "|".join(escaped_texts)
+                    query += f' |~ "({regex_pattern})"'
+                else:
+                    raise ValueError(f"Неподдерживаемый режим поиска: {search_mode}. Используйте 'and' или 'or'")
 
-        query = self._build_logql_query(filters, search_text)
-
-        params = {
-            "query": query,
-            "limit": limit,
-            "time": int(time.timestamp() * 1e9)
-        }
-
-        try:
-            response = requests.get(
-                self.query_endpoint,
-                params=params,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            logs = []
-
-            if data.get("status") == "success":
-                results = data.get("data", {}).get("result", [])
-
-                for stream in results:
-                    labels = stream.get("labels", {})
-                    values = stream.get("values", [])
-
-                    for value in values:
-                        timestamp_ns, log_line = value
-                        log_entry = {
-                            "timestamp": datetime.fromtimestamp(int(timestamp_ns) / 1e9),
-                            "timestamp_ns": timestamp_ns,
-                            "message": log_line,
-                            "labels": labels
-                        }
-                        logs.append(log_entry)
-
-            return logs
-
-        except requests.exceptions.RequestException as e:
-            print(f"Ошибка при запросе к Loki: {e}")
-            return []
-
-    def get_labels(self) -> List[str]:
-        """
-        Получение списка всех доступных меток (labels)
-
-        Returns:
-            Список названий меток
-        """
-        try:
-            response = requests.get(
-                self.labels_endpoint,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            if data.get("status") == "success":
-                return data.get("data", [])
-            return []
-
-        except requests.exceptions.RequestException as e:
-            print(f"Ошибка при получении меток: {e}")
-            return []
-
-    def get_label_values(self, label: str) -> List[str]:
-        """
-        Получение всех значений для указанной метки
-
-        Args:
-            label: Название метки
-
-        Returns:
-            Список значений метки
-        """
-        try:
-            response = requests.get(
-                f"{self.labels_endpoint}/{label}/values",
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            if data.get("status") == "success":
-                return data.get("data", [])
-            return []
-
-        except requests.exceptions.RequestException as e:
-            print(f"Ошибка при получении значений метки: {e}")
-            return []
-
-
-# Пример использования
-if __name__ == "__main__":
-    # Создаем клиент
-    client = LokiClient("http://localhost:3100")
-
-    # Пример 1: Получение логов с фильтрами
-    print("=== Пример 1: Логи с фильтрами ===")
-    logs = client.query_logs(
-        filters={
-            "service_name": "loom-tg-bot",
-            "detected_level": "INFO"
-        },
-        limit=10,
-        start_time=datetime.now() - timedelta(hours=2)
-    )
-
-    for log in logs[:3]:  # Показываем первые 3
-        print(f"{log['timestamp']}: {log['message']}")
-        print(f"  Labels: {log['labels']}")
-        print()
-
-    # Пример 2: Поиск по тексту
-    print("=== Пример 2: Поиск по тексту ===")
-    logs = client.query_logs(
-        filters={
-            "service_name": "loom-tg-bot"
-        },
-        search_text="OrganizationMenuService",
-        limit=5
-    )
-
-    print(f"Найдено логов: {len(logs)}")
-
-    # Пример 3: Логи определенного пользователя
-    print("\n=== Пример 3: Логи пользователя ===")
-    logs = client.query_logs(
-        filters={
-            "service_name": "loom-tg-bot",
-            "telegram_user_username": "gommgo"
-        },
-        limit=5,
-        start_time=datetime.now() - timedelta(hours=24)
-    )
-
-    print(f"Найдено логов пользователя: {len(logs)}")
-
-    # Пример 4: Получение всех доступных меток
-    print("\n=== Пример 4: Доступные метки ===")
-    labels = client.get_labels()
-    print(f"Доступные метки: {labels[:10]}...")  # Первые 10
-
-    # Пример 5: Получение значений метки
-    print("\n=== Пример 5: Значения метки service_name ===")
-    values = client.get_label_values("service_name")
-    print(f"Значения: {values}")
+        return query

@@ -34,4 +34,4 @@ class Config:
         self.loom_authorization_port = int(os.getenv("LOOM_AUTHORIZATION_PORT", "8081"))
 
         self.loki_host = os.getenv("LOOM_LOKI_CONTAINER_NAME", "localhost")
-        self.loki_port = int(os.getenv("LOOM_LOKI_PORT", "8081"))
+        self.loki_port = int(os.getenv("LOOM_LOKI_HTTP_PORT", "3100"))

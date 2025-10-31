@@ -8,7 +8,6 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from infrastructure.telemetry.telemetry import Telemetry
 from internal.config.config import Config
-from internal.migration.manager import MigrationManager
 
 
 async def main():

@@ -2,6 +2,7 @@ from contextvars import ContextVar
 
 import uvicorn
 
+from infrastructure.loki.loki import LokiClient
 from infrastructure.telemetry.telemetry import Telemetry, AlertManager
 
 from pkg.client.internal.loom_authorization.client import LoomAuthorizationClient
@@ -49,6 +50,10 @@ loom_authorization_client = LoomAuthorizationClient(
     log_context=log_context
 )
 
+loki = LokiClient(
+    cfg.loki_host,
+    cfg.loki_port,
+)
 
 # Инициализация сервисов
 dashboard_service = DashboardService(

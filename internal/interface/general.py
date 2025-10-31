@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from datetime import datetime
 from typing import Protocol, Sequence, Any
 
 from fastapi import FastAPI
@@ -56,3 +57,17 @@ class IRedis(Protocol):
 
     @abstractmethod
     async def get(self, key: str, default: Any = None) -> Any: pass
+
+class ILokiClient(Protocol):
+    @abstractmethod
+    async def query_logs(
+            self,
+            filters: dict = None,
+            search_text: str | list[str] = None,
+            search_mode: str = "and",
+            limit: int = 100,
+            start_time: datetime = None,
+            end_time: datetime = None,
+            direction: str = "backward",
+            parse_json: bool = True
+    ) -> list[dict]: pass

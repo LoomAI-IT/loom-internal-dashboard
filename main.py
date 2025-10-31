@@ -58,6 +58,7 @@ loki = LokiClient(
 # Инициализация сервисов
 dashboard_service = DashboardService(
     tel=tel,
+    loki=loki
 )
 
 # Инициализация контроллеров

@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timedelta
 from typing import Optional
 
 from infrastructure.loki.loki import LokiClient
@@ -23,6 +24,7 @@ class DashboardService(interface.IDashboardService):
     async def get_user_movement_map(
             self,
             account_id: int,
+            hours: int = 24,
     ) -> list[dict]:
         logs = await self.loki.query_logs(
             filters={
@@ -32,6 +34,7 @@ class DashboardService(interface.IDashboardService):
                 "account_id": account_id,
             },
             search_text=["Service"],
+            start_time=datetime.now() - timedelta(hours=hours),
         )
         self.logger.info('loki', {"logs": logs})
 

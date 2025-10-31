@@ -32,10 +32,12 @@ class LokiClient(interface.ILokiClient):
             start_time: datetime = None,
             end_time: datetime = None,
             direction: str = "backward",
-            parse_json: bool = True
+            parse_json: bool = True,
+            limit: int = None,
+            batch_size: int = 5000
     ) -> list[dict]:
         """
-        Получение логов с фильтрацией
+        Получение логов с фильтрацией и автоматической пагинацией
 
         Args:
             filters: Словарь с label selectors (например, {"service_name": "my-service"})
@@ -46,6 +48,8 @@ class LokiClient(interface.ILokiClient):
             end_time: Конец временного диапазона (по умолчанию - сейчас)
             direction: Направление сортировки ("backward" или "forward")
             parse_json: Автоматически парсить JSON из message (по умолчанию True)
+            limit: Максимальное количество логов (None = без ограничений, получить все)
+            batch_size: Размер одного запроса к Loki (по умолчанию 5000, не рекомендуется увеличивать)
 
         Returns:
             Список логов в виде словарей
@@ -62,51 +66,93 @@ class LokiClient(interface.ILokiClient):
 
         query = self._build_logql_query(filters, content_filters, search_text, search_mode)
 
-        params = {
-            "query": query,
-            "start": int(start_time.timestamp() * 1e9),
-            "end": int(end_time.timestamp() * 1e9),
-            "direction": direction
-        }
+        all_logs = []
+        current_end_time = end_time
 
-        try:
-            response = await self.client.get(
-                "/query_range",
-                params=params,
-            )
+        # Пагинация: делаем запросы пока есть данные или пока не достигнем лимита
+        while True:
+            # Определяем размер текущего батча
+            if limit is not None:
+                remaining = limit - len(all_logs)
+                if remaining <= 0:
+                    break
+                current_batch_size = min(batch_size, remaining)
+            else:
+                current_batch_size = batch_size
 
-            data = response.json()
+            params = {
+                "query": query,
+                "start": int(start_time.timestamp() * 1e9),
+                "end": int(current_end_time.timestamp() * 1e9),
+                "direction": direction,
+                "limit": current_batch_size
+            }
 
-            logs = []
-            if data.get("status") == "success":
-                results = data.get("data", {}).get("result", [])
+            try:
+                response = await self.client.get(
+                    "/query_range",
+                    params=params,
+                )
 
-                for stream in results:
-                    labels = stream.get("stream", {})
-                    values = stream.get("values", [])
+                data = response.json()
 
-                    for value in values:
-                        timestamp_ns, log_line = value
+                batch_logs = []
+                if data.get("status") == "success":
+                    results = data.get("data", {}).get("result", [])
 
-                        log_entry = {
-                            "timestamp": datetime.fromtimestamp(int(timestamp_ns) / 1e9),
-                            "timestamp_ns": timestamp_ns,
-                            "message": log_line,
-                        }
+                    for stream in results:
+                        labels = stream.get("stream", {})
+                        values = stream.get("values", [])
 
-                        log_entry.update(labels)
+                        for value in values:
+                            timestamp_ns, log_line = value
 
-                        if parse_json:
-                            parsed_fields = self._parse_log_line(log_line)
-                            if parsed_fields:
-                                log_entry.update(parsed_fields)
+                            log_entry = {
+                                "timestamp": datetime.fromtimestamp(int(timestamp_ns) / 1e9),
+                                "timestamp_ns": timestamp_ns,
+                                "message": log_line,
+                            }
 
-                        logs.append(log_entry)
+                            log_entry.update(labels)
 
-            return logs
+                            if parse_json:
+                                parsed_fields = self._parse_log_line(log_line)
+                                if parsed_fields:
+                                    log_entry.update(parsed_fields)
 
-        except Exception as e:
-            raise e
+                            batch_logs.append(log_entry)
+
+                # Если получили меньше логов чем запрашивали, значит это последний батч
+                if len(batch_logs) < current_batch_size:
+                    all_logs.extend(batch_logs)
+                    break
+
+                all_logs.extend(batch_logs)
+
+                # Если достигли лимита, останавливаемся
+                if limit is not None and len(all_logs) >= limit:
+                    break
+
+                # Обновляем end_time для следующего запроса
+                # Берём timestamp самого старого лога из текущего батча
+                if batch_logs:
+                    if direction == "backward":
+                        # При backward сортировке логи идут от новых к старым
+                        oldest_log = batch_logs[-1]
+                        # Вычитаем 1 наносекунду чтобы не получить тот же лог снова
+                        current_end_time = datetime.fromtimestamp(int(oldest_log["timestamp_ns"]) / 1e9 - 0.000000001)
+                    else:
+                        # При forward сортировке логи идут от старых к новым
+                        newest_log = batch_logs[-1]
+                        # Для forward меняем start_time
+                        start_time = datetime.fromtimestamp(int(newest_log["timestamp_ns"]) / 1e9 + 0.000000001)
+                else:
+                    break
+
+            except Exception as e:
+                raise e
+
+        return all_logs
 
     def _parse_log_line(self, log_line: str) -> Optional[Dict[str, Any]]:
         try:

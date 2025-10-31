@@ -34,7 +34,7 @@ def include_dashboard_handlers(
         prefix: str
 ):
     app.add_api_route(
-        prefix + "/user-movement-map",
+        prefix + "/user-movement-map/{account_id}",
         dashboard_controller.get_user_movement_map,
         methods=["GET"],
         tags=["Dashboard"],
